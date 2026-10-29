@@ -1,0 +1,28 @@
+name: Build Cardputer ADV Custom
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-cardputer-adv:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:release-v6.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build m5stack-cardputer-adv
+        shell: bash
+        run: |
+          source "$IDF_PATH/export.sh"
+          idf.py --version
+          python scripts/build.py "m5stack/cardputer-adv" --name "m5stack-cardputer-adv" --zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cardputer-adv-firmware
+          path: releases/*.zip
+          if-no-files-found: error
+          overwrite: true
