@@ -8,6 +8,7 @@
 #include "i2c_device.h"
 #include "tca8418_keyboard.h"
 #include "adc_battery_monitor.h"
+#include "mcp_server.h"
 
 #include <esp_log.h>
 #include <driver/i2c_master.h>
@@ -42,6 +43,7 @@ private:
     bool muted_chat_mode_ = false;
     int saved_volume_ = 70;
     std::string typed_text_;
+    std::string last_sent_typed_msg_;
 
     void InitializeI2c() {
         ESP_LOGI(TAG, "Initialize I2C bus");
@@ -241,7 +243,12 @@ private:
             typing_mode_ = false;
             just_sent_typed_msg_ = true;
             if (!msg.empty()) {
-                app.WakeWordInvoke(msg);
+                last_sent_typed_msg_ = msg;
+                if (msg.size() <= 24) {
+                    app.WakeWordInvoke(msg);
+                } else {
+                    app.WakeWordInvoke("Leggi tastiera");
+                }
             }
             return;
         }
@@ -255,6 +262,9 @@ private:
         }
 
         if (event.key_char != nullptr && event.key_char[0] != '\0') {
+            if (!typing_mode_ && app.GetDeviceState() == kDeviceStateListening) {
+                app.GetAudioService().EnableVoiceProcessing(false);
+            }
             typing_mode_ = true;
             typed_text_ += event.key_char;
             std::string preview = "> " + typed_text_ + "_";
@@ -402,6 +412,21 @@ private:
         }
     }
 
+    void InitializeTools() {
+        auto& mcp_server = McpServer::GetInstance();
+        mcp_server.AddTool(
+            "self.keyboard.read_typed_message",
+            "Reads the text message typed by the user on the physical keyboard of this M5Stack Cardputer.\n"
+            "MANDATORY RULE: Whenever the user says 'Leggi tastiera' or asks you to read the keyboard message, "
+            "you MUST immediately call `self.keyboard.read_typed_message` to read the user's typed text, "
+            "and then answer or respond directly to what the user typed!",
+            PropertyList(),
+            [this](const PropertyList&) -> ReturnValue {
+                return std::string("The user typed on the keyboard: \"") + last_sent_typed_msg_ +
+                       "\". Reply directly to this message!";
+            });
+    }
+
 public:
     M5StackCardputerAdvBoard() : boot_button_(BOOT_BUTTON_GPIO) {
         InitializeI2c();
@@ -411,6 +436,7 @@ public:
         InitializeButtons();
         InitializeKeyboard();
         InitializeBatteryMonitor();
+        InitializeTools();
         GetBacklight()->RestoreBrightness();
     }
 
